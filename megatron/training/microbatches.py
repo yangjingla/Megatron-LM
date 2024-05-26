@@ -6,6 +6,12 @@ from abc import ABC
 from abc import abstractmethod
 
 
+""" 
+ 1. 理解好micro_batch的关系
+ 2. tp x pp x  
+"""
+
+
 def build_num_microbatches_calculator(args):
 
     # Constant num micro-batches.

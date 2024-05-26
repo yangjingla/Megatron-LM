@@ -489,7 +489,11 @@ def get_optimizer_param_scheduler(optimizer):
 
     return opt_param_scheduler
 
-
+""" 
+辅助函数： 设置模型和优化器的一些wrappes
+        模型的权重加载
+        优化器超参数设置
+"""
 def setup_model_and_optimizer(model_provider_func,
                               model_type,
                               no_wd_decay_cond=None,
@@ -1059,6 +1063,7 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
                 decoupled_learning_rate = param_group['lr']
             else:
                 learning_rate = param_group['lr']
+                
         report_memory_flag = training_log(loss_dict, total_loss_dict,
                                           learning_rate,
                                           decoupled_learning_rate,

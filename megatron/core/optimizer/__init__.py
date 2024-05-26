@@ -147,7 +147,9 @@ def _update_min_and_max_lr_in_param_groups(
             param_group['min_lr'] = min_lr
     return param_groups
 
-
+""" 
+megatron optimizer 初始化参数 __init__
+"""
 def _get_megatron_optimizer_based_on_param_groups(
     config: OptimizerConfig,
     param_groups: List,
@@ -236,6 +238,7 @@ def _get_megatron_optimizer_based_on_param_groups(
             init_state_fn,
         ]
         if config.use_distributed_optimizer:
+            # 分布式优化器
             optimizer = DistributedOptimizer(
                 *optimizer_args,
                 per_model_buffers=per_model_buffers,
@@ -244,6 +247,7 @@ def _get_megatron_optimizer_based_on_param_groups(
                 data_parallel_group_idx=data_parallel_group_idx,
             )
         else:
+            # fp16优化器
             optimizer = Float16OptimizerWithFloat16Params(*optimizer_args)
 
         return optimizer

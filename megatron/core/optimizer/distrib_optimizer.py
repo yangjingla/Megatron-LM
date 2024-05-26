@@ -41,7 +41,9 @@ class Range:
     def __len__(self):
         return self.end - self.start
 
-
+"""
+分布式优化器
+"""
 class DistributedOptimizer(MixedPrecisionOptimizer):
     @classmethod
     def _build_model_gbuf_param_range_map(

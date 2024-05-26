@@ -25,6 +25,8 @@ from .clip_grads import clip_grad_norm_fp32, count_zeros_fp32
 from .grad_scaler import MegatronGradScaler
 from .optimizer_config import OptimizerConfig
 
+from torch.optim import AdamW
+
 logger = getLogger(__name__)
 
 
@@ -214,7 +216,10 @@ class MegatronOptimizer(ABC):
         Returns: optimizer sharded state dict
         """
 
-
+"""
+优化器初始化： 注意grad_scalar 动态损失
+            最后被包成分布式优化器
+"""
 class MixedPrecisionOptimizer(MegatronOptimizer):
     """Base class for both the float-16 and the distributed optimizer.
 

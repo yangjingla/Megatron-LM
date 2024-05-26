@@ -268,7 +268,9 @@ def get_rng_state(use_dist_ckpt: bool = False):
 
     return rng_state_list
 
-
+"""
+保存优化器状态
+"""
 def save_checkpoint(iteration, model, optimizer, opt_param_scheduler,
                     num_floating_point_operations_so_far, checkpointing_context=None):
     """Save a model checkpoint.
@@ -296,6 +298,9 @@ def save_checkpoint(iteration, model, optimizer, opt_param_scheduler,
         optim_checkpoint_name = \
             get_distributed_optimizer_checkpoint_name(checkpoint_name)
         ensure_directory_exists(optim_checkpoint_name)
+        """
+        save optimizer state
+        """
         optimizer.save_parameter_state(optim_checkpoint_name)
 
     async_save_request = None
