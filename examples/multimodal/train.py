@@ -19,6 +19,7 @@ from megatron.core.models.multimodal.llava_model import LLaVAModel
 from layer_specs import get_layer_spec, get_mlp_module_spec, get_layer_spec_te
 from megatron.training import pretrain
 from megatron.training.utils import average_losses_across_data_parallel_group
+from dataloader_provider import train_valid_test_dataloaders_provider
 
 
 def model_provider(pre_process=True, post_process=True, parallel_output=True) -> LLaVAModel:
@@ -50,7 +51,7 @@ def model_provider(pre_process=True, post_process=True, parallel_output=True) ->
         language_transformer_layer_spec = get_layer_spec(is_vit=False)
 
     vision_config = deepcopy(base_config)
-    vision_config = get_vision_model_config(vision_config, apply_query_key_layer_scaling=use_te)
+    vision_config = get_vision_model_config(vision_config, apply_query_key_layer_scaling=args.apply_query_key_layer_scaling)
 
     if use_te:
         vision_transformer_layer_spec = get_layer_spec_te(is_vit=True)
@@ -59,7 +60,7 @@ def model_provider(pre_process=True, post_process=True, parallel_output=True) ->
 
     vision_projection_config = deepcopy(base_config)
     vision_projection_config = get_vision_projection_config(vision_projection_config, language_config.hidden_size)
-    vision_projection_layer_spec = get_mlp_module_spec(use_te=use_te)
+    vision_projection_layer_spec = get_mlp_module_spec(use_te=use_te).submodules
 
     model = LLaVAModel(
         language_transformer_config=language_config,
@@ -76,6 +77,8 @@ def model_provider(pre_process=True, post_process=True, parallel_output=True) ->
         parallel_output=parallel_output,
         language_position_embedding_type=args.position_embedding_type,
         language_rotary_percent=args.rotary_percent,
+        language_rotary_base=args.rotary_base,
+        img_embedding_idx=args.img_embedding_idx,
     )
 
     model.freeze(freeze_language_model=args.freeze_LM, freeze_vision_model=args.freeze_ViT, freeze_vision_projection=False)
@@ -115,12 +118,15 @@ def get_batch(data_iterator):
     tokenizer = get_tokenizer()
     tokens = tokens_[:, :args.seq_length].contiguous()
     labels = tokens_[:, 1:args.seq_length+1].contiguous()
-
     torch.cuda.nvtx.range_pop()
 
     torch.cuda.nvtx.range_push("get_ltor_masks_and_position_ids")
+    if hasattr(tokenizer, 'eod'):
+        eod_token = tokenizer.eod
+    elif hasattr(tokenizer, 'eos_id'):
+        eod_token = tokenizer.eos_id
     attention_mask, loss_mask, position_ids = \
-        get_ltor_masks_and_position_ids(tokens, tokenizer.eod,
+        get_ltor_masks_and_position_ids(tokens, eod_token,
                                         args.reset_position_ids,
                                         args.reset_attention_mask,
                                         args.eod_mask_loss,
@@ -134,8 +140,7 @@ def get_batch(data_iterator):
     return tokens, labels, loss_mask, attention_mask, position_ids, img_raw
 
 
-def _preprocess_data_for_llava(loss_mask, labels, attention_mask):
-    """Preprocess data sample to the format expected by a LLaVA model."""
+def get_image_token_count():
     args = get_args()
 
     add_class_token = not args.disable_vision_class_token
@@ -144,6 +149,14 @@ def _preprocess_data_for_llava(loss_mask, labels, attention_mask):
     num_patches_per_dim_w = args.img_w // args.patch_dim
     num_patches = num_patches_per_dim_h * num_patches_per_dim_w
     num_image_tokens = num_patches + (1 if add_class_token else 0)
+
+    return num_image_tokens
+
+
+def _preprocess_data_for_llava(loss_mask, labels, attention_mask):
+    """Preprocess data sample to the format expected by a LLaVA model."""
+    num_image_tokens = get_image_token_count()
+
     batch_size = loss_mask.shape[0]
 
     loss_mask2 = torch.cat(
@@ -195,7 +208,7 @@ def get_ltor_masks_and_position_ids(data,
 
     if question_length is not None:
         for b in range(micro_batch_size):
-            loss_mask[b, :max(0, question_length[b].item() - 1)] = 0.0
+            loss_mask[b, :max(0, question_length[b].item())] = 0.0
 
     if reset_position_ids or reset_attention_mask:
         # Loop through the batches:
@@ -253,6 +266,7 @@ def forward_step(data_iterator, model: LLaVAModel):
         output_tensor (torch.Tensor): Loss of shape [b, s] if labels are provided, otherwise logits of shape [b, s, vocab_size].
         loss_func (callable): Loss function with a loss mask specified.
     """
+    args = get_args()
     timers = get_timers()
 
     # Get the batch.
@@ -280,14 +294,18 @@ def add_multimodal_extra_args(parser):
     group.add_argument("--disable-vision-class-token", action="store_true", default=False)
     group.add_argument("--allow-missing-vision-projection-checkpoint", action="store_true", default=False)
     group.add_argument("--use-te", action="store_true", default=False)
+    group.add_argument("--img-embedding-idx", type=int, default=0,
+                       help='Llava specific parameter. Defines at which index'
+                       'in the language_embedding tensor the image_embeddings'
+                       'should be inserted')
     return parser
 
 
 if __name__ == "__main__":
-    train_valid_test_datasets_provider.is_distributed = True
+    train_valid_test_dataloaders_provider.is_distributed = True
 
     pretrain(
-        train_valid_test_datasets_provider,
+        train_valid_test_dataloaders_provider,
         model_provider,
         ModelType.encoder_or_decoder,
         forward_step,
